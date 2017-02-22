@@ -56,4 +56,3 @@ geocode(loc, limit = 1, key = "place")
 Photon web site \url{http://photon.komoot.de/}\cr
 Photon source code \url{https://github.com/komoot/photon}
 }
-

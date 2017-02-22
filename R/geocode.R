@@ -6,6 +6,93 @@
 #' @docType package
 NULL
 
+.geocode <- function(location, limit = NULL, key = NULL, value = NULL,
+                     lang = NULL,
+                     server = NULL, quiet = FALSE){
+  # options management
+  if (!is.null(limit)) {
+    limit <- paste("&limit=", limit, sep = "")
+  }
+  if (!is.null(key)) {
+    key <- paste("&osm_tag=", key, sep = "")
+  }
+  if (!is.null(value)) {
+    if (!is.null(key)) {
+      value <- paste(":", value, sep = "")
+    } else{
+      value <- paste("&osm_tag=:", value, sep = "")
+    }
+  }
+  if (!is.null(lang)) {
+    lang <- paste("&lang=", lang, sep = "")
+  }
+  params <- paste(limit, key, value, lang, sep = "")
+  if (is.null(server)) {
+    server <- "http://photon.komoot.de/"
+  }
+
+  # result data.frame
+  pts <- data.frame(
+    location = character(0),
+    name = character(0),
+    housenumber = character(0),
+    street = character(0),
+    postcode = character(0),
+    city = character(0),
+    state = character(0),
+    country = character(0),
+    osm_key = character(0),
+    osm_value = character(0),
+    lon = numeric(0),
+    lat = numeric(0),
+    msg = character(0),
+    stringsAsFactors = FALSE
+  )
+
+
+  # query builder
+  llocation <- length(location)
+  for (i in 1:llocation) {
+    # buid query
+    if (!quiet) {
+      print(location[i])
+    }
+    searched <- paste(server, "api?q=", location[i], params, sep = "")
+    x <- tryCatch({
+      curl = getCurlHandle()
+      # send query
+      RCurl::getURL(URLencode(searched), curl = curl)
+    },
+    error = function(condition) {
+      cat(getCurlInfo(curl, "response.code")[[1]])
+    })
+
+    # parse result
+    ret <- RJSONIO::fromJSON(x)
+    nbfeat <- length(ret$features)
+    # if result...
+    if (nbfeat > 0) {
+      for (j in 1:nbfeat) {
+        ret_names <- intersect(names(pts),
+                               names(ret$features[[j]]$properties))
+        tmp_df <-
+          data.frame(t(sapply(ret_names, function(x) {
+            ret$features[[j]]$properties[[x]]
+          })),
+          stringsAsFactors = FALSE)
+        tmp_df$lon <- ret$features[[j]]$geometry$coordinates[1]
+        tmp_df$lat <- ret$features[[j]]$geometry$coordinates[2]
+        pts[nrow(pts) + 1, c("location", names(tmp_df))] <-
+          c(location[i],
+            tmp_df[1, ])
+      }
+    } else {
+      pts[nrow(pts) + 1, c("location", "msg")] <-
+        c(location[i], "Not found")
+    }
+  }
+  return(pts)
+}
 
 
 #' @title Geocode Locations With Photon API
@@ -46,73 +133,5 @@ NULL
 #'          "36 Strada Panait Istrati, Bucarest, Romania")
 #' geocode(loc, limit = 1, key = "place")
 #' @export
-geocode <- function(location, limit = NULL, key = NULL, value = NULL,
-                    lang = NULL,
-                    server = NULL, quiet = FALSE){
-  # options management
-  if (!is.null(limit)){limit <- paste("&limit=",limit, sep="") }
-  if (!is.null(key)){key <- paste("&osm_tag=",key, sep="")}
-  if (!is.null(value)){
-    if (!is.null(key)) {
-      value <- paste(":",value, sep="")
-    }else{
-      value <- paste("&osm_tag=:",value, sep="")
-    }
-  }
-  if (!is.null(lang)){lang <- paste("&lang=",lang, sep="")}
-  params <- paste(limit, key, value, lang, sep = "")
-  if (is.null(server)){server <- "http://photon.komoot.de/"}
+geocode <- memoise::memoise(.geocode)
 
-  # result data.frame
-  pts <- data.frame(location = character(0),
-                    name = character(0), housenumber = character(0),
-                    street = character(0),
-                    postcode = character(0), city = character(0),
-                    state = character(0),
-                    country = character(0), osm_key = character(0),
-                    osm_value = character(0), lon = numeric(0),
-                    lat = numeric(0),
-                    msg = character(0),
-                    stringsAsFactors = FALSE)
-
-
-  # query builder
-  llocation <- length(location)
-  for (i in 1:llocation){
-    # buid query
-    if (!quiet){
-      print(location[i])
-    }
-    searched <- paste(server,"api?q=",location[i], params, sep="")
-    x <- tryCatch(
-      {
-        curl = getCurlHandle()
-        # send query
-        RCurl::getURL(URLencode(searched), curl = curl)
-      },
-      error = function(condition){
-        cat(getCurlInfo(curl, "response.code")[[1]])
-      }
-    )
-
-    # parse result
-    ret <- RJSONIO::fromJSON(x)
-    nbfeat <- length(ret$features)
-    # if result...
-    if(nbfeat > 0){
-      for (j in 1:nbfeat){
-        ret_names <- intersect(names(pts),
-                               names(ret$features[[j]]$properties))
-        tmp_df <- data.frame(t(sapply(ret_names, function(x) { ret$features[[j]]$properties[[x]] })),
-                             stringsAsFactors=FALSE)
-        tmp_df$lon <- ret$features[[j]]$geometry$coordinates[1]
-        tmp_df$lat <- ret$features[[j]]$geometry$coordinates[2]
-        pts[nrow(pts)+1,c("location",names(tmp_df))] <- c(location[i],
-                                                          tmp_df[1,])
-      }
-    } else {
-      pts[nrow(pts)+1,c("location", "msg")] <- c(location[i],"Not found")
-    }
-  }
-  return(pts)
-}
